@@ -3,6 +3,7 @@ package wallet
 import (
 	"context"
 	"errors"
+	"mini-wallet/domain/common/response"
 )
 
 const (
@@ -13,19 +14,41 @@ const (
 )
 
 type Wallet struct {
-	WalletId   string  `json:"wallet_id"`
-	OwnedBy    string  `json:"owned_by"` // customer_xid on wallet creation
-	EnabledAt  *string `json:"enabled_at"`
-	DisabledAt *string `json:"disabled_at"`
-	Balance    int     `json:"balance"`
-	Status     string  `json:"status"`
+	Id        string  `json:"id" gorm:"column:id"`
+	OwnedBy   string  `json:"owned_by" gorm:"column:owned_by"` // customer_xid on wallet creation
+	EnabledAt *string `json:"enabled_at" gorm:"column:enabled_at"`
+	Balance   int     `json:"balance" gorm:"column:balance"`
+	Status    string  `json:"status" gorm:"column:status"`
+}
+
+func (wallet *Wallet) ValidateWalletStatus() error {
+	if wallet.Status != WALLET_STATUS_ENABLED {
+		return errors.New(response.WALLET_DISABLED_ERROR)
+	}
+
+	return nil
+}
+
+type WalletTransactionEntity struct {
+	Id          string `json:"id"`
+	WalletId    string `json:"wallet_id"`
+	Amount      int    `json:"amount"`
+	CreatedAt   string `json:"created_at"`
+	CreatedBy   string `json:"created_by"`
+	Type        string `json:"type"`
+	Status      string `json:"status"`
+	ReferenceId string `json:"reference_id"`
 }
 
 type WalletTransaction struct {
-	WalletId  string `json:"wallet_id"`
-	Amount    int    `json:"amount"`
-	CreatedAt string `json:"created_at"`
-	Type      string `json:"type"`
+	Id          string  `json:"id"`
+	Amount      int     `json:"amount"`
+	Status      string  `json:"status"`
+	ReferenceId string  `json:"reference_id"`
+	DepositedAt *string `json:"deposited_at,omitempty"`
+	DepositedBy *string `json:"deposited_by,omitempty"`
+	WithdrawnAt *string `json:"withdrawn_at,omitempty"`
+	WithdrawnBy *string `json:"withdrawn_by,omitempty"`
 }
 
 type WalletTransactionRequest struct {
@@ -52,9 +75,9 @@ type GetWalletTransactionRequest struct {
 }
 
 type WalletUsecase interface {
-	CreateWallet(ctx context.Context, req WalletCreationRequest) (err error)
-	EnableWallet(ctx context.Context, token string, walletId string) (err error)
-	DisableWallet(ctx context.Context, token string, walletId string) (err error)
+	EnableWallet(ctx context.Context, walletId string) (res *response.Response[Wallet], err error)
+	DisableWallet(ctx context.Context, walletId string) (res *response.Response[Wallet], err error)
+	GetWalletBalance(ctx context.Context, walletId string) (res *response.Response[Wallet], err error)
 	AddWalletBalance(ctx context.Context, req WalletTransactionRequest) (err error)
 	ReduceWalletBalance(ctx context.Context, req WalletTransactionRequest) (err error)
 	GetWalletTransactions(ctx context.Context, req GetWalletTransactionRequest) (res []WalletTransaction, err error)
@@ -62,6 +85,7 @@ type WalletUsecase interface {
 
 type WalletRepository interface {
 	GetCustomerWallet(ctx context.Context, customerId string) (res *Wallet, err error)
+	GetWalletById(ctx context.Context, walletId string) (res *Wallet, err error)
 	InsertWallet(ctx context.Context, wallet Wallet) (err error)
 	UpdateWallet(ctx context.Context, wallet Wallet) (err error)
 }

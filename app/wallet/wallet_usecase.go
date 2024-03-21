@@ -2,8 +2,10 @@ package wallet
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"mini-wallet/domain"
+	"mini-wallet/domain/common/response"
 	"mini-wallet/domain/wallet"
 	"mini-wallet/infrastructure"
 
@@ -28,19 +30,70 @@ func NewWalletUsecase(repositories domain.Repositories, cache infrastructure.Cac
 	}
 }
 
-func (usecase *walletUsecase) CreateWallet(ctx context.Context, req wallet.WalletCreationRequest) (err error) {
+func (usecase *walletUsecase) GetWalletBalance(ctx context.Context, walletId string) (res *response.Response[wallet.Wallet], err error) {
+	walletResult, err := usecase.walletRepository.GetWalletById(ctx, walletId)
+	if err != nil {
+		infrastructure.Log("got error on usecase.walletRepository.GetWalletById() - GetWalletBalance")
+		return nil, err
+	}
 
-	return
+	if walletResult == nil {
+		return nil, errors.New("wallet not found")
+	}
+
+	if err = walletResult.ValidateWalletStatus(); err != nil {
+		return nil, errors.New(response.WALLET_DISABLED_ERROR)
+	}
+
+	return &response.Response[wallet.Wallet]{
+		Data: walletResult,
+	}, nil
 }
 
-func (usecase *walletUsecase) EnableWallet(ctx context.Context, token string, walletId string) (err error) {
+func (usecase *walletUsecase) EnableWallet(ctx context.Context, walletId string) (res *response.Response[wallet.Wallet], err error) {
+	walletResult, err := usecase.walletRepository.GetWalletById(ctx, walletId)
+	if err != nil {
+		infrastructure.Log("got error on usecase.walletRepository.GetWalletById() - EnableWallet")
+		return nil, err
+	}
 
-	return
+	if walletResult == nil {
+		return nil, errors.New("wallet not found")
+	}
+
+	walletResult.Status = wallet.WALLET_STATUS_ENABLED
+	err = usecase.walletRepository.UpdateWallet(ctx, *walletResult)
+	if err != nil {
+		infrastructure.Log("got error on usecase.walletRepository.UpdateWallet() - EnableWallet")
+		return nil, err
+	}
+
+	return &response.Response[wallet.Wallet]{
+		Data: walletResult,
+	}, nil
 }
 
-func (usecase *walletUsecase) DisableWallet(ctx context.Context, token string, walletId string) (err error) {
+func (usecase *walletUsecase) DisableWallet(ctx context.Context, walletId string) (res *response.Response[wallet.Wallet], err error) {
+	walletResult, err := usecase.walletRepository.GetWalletById(ctx, walletId)
+	if err != nil {
+		infrastructure.Log("got error on usecase.walletRepository.GetWalletById() - EnableWallet")
+		return nil, err
+	}
 
-	return
+	if walletResult == nil {
+		return nil, errors.New("wallet not found")
+	}
+
+	walletResult.Status = wallet.WALLET_STATUS_DISABLED
+	err = usecase.walletRepository.UpdateWallet(ctx, *walletResult)
+	if err != nil {
+		infrastructure.Log("got error on usecase.walletRepository.UpdateWallet() - EnableWallet")
+		return nil, err
+	}
+
+	return &response.Response[wallet.Wallet]{
+		Data: walletResult,
+	}, nil
 }
 
 func (usecase *walletUsecase) AddWalletBalance(ctx context.Context, req wallet.WalletTransactionRequest) (err error) {

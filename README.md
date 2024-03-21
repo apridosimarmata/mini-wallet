@@ -16,3 +16,4 @@ Redlock (implemented with redsync) also provide TTL for each lock to prevent dea
 ## How to setup
 
 goose -dir ./infrastructure/migrations/ create create_wallet_table sql
+goose -dir infrastructure/migrations postgres "host=localhost port=5432 user=postgres password=postgres dbname=mini-wallet sslmode=disable" up

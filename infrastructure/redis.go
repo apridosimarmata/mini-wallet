@@ -2,13 +2,15 @@ package infrastructure
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/go-redis/redis"
 )
 
 func NewRedisClient(ctx context.Context, config Config) redis.Client {
 	rdb := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
+		Addr:     fmt.Sprintf("%s:%s", config.REDIS_HOST, config.REDIS_PORT),
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
@@ -17,8 +19,8 @@ func NewRedisClient(ctx context.Context, config Config) redis.Client {
 }
 
 type Cache interface {
-	SetObj(ctx context.Context, key string, obj interface{}, ttlInSec int) (err error)
-	GetObj(ctx context.Context, key string) (result *interface{}, err error)
+	SetString(ctx context.Context, key string, obj string, ttlInSec int) (err error)
+	GetString(ctx context.Context, key string) (result string, err error)
 	Del(ctx context.Context, key string) (err error)
 }
 
@@ -32,17 +34,20 @@ func NewCache(redisClient redis.Client) Cache {
 	}
 }
 
-func (cache *redisCache) SetObj(ctx context.Context, key string, obj interface{}, ttlInSec int) (err error) {
-
-	return
+func (cache *redisCache) SetString(ctx context.Context, key string, obj string, ttlInSec int) (err error) {
+	return cache.client.Set(key, obj, time.Second*time.Duration(ttlInSec)).Err()
 }
 
-func (cache *redisCache) GetObj(ctx context.Context, key string) (result *interface{}, err error) {
+func (cache *redisCache) GetString(ctx context.Context, key string) (result string, err error) {
+	res, err := cache.client.Get(key).Result()
+	if err != nil {
+		return "", err
+	}
 
-	return
+	return res, nil
 }
 
 func (cache *redisCache) Del(ctx context.Context, key string) (err error) {
-
+	// TODO: not used
 	return
 }

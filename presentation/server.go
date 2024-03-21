@@ -32,6 +32,7 @@ func InitServer() chi.Router {
 
 	repositories := domain.Repositories{
 		WalletRepository: wallet.NewWalletRepository(postgresDb, cache),
+		AuthRepository:   auth.NewAuthRepository(cache),
 	}
 
 	usecases := domain.Usecases{

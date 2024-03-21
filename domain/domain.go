@@ -7,6 +7,7 @@ import (
 
 type Repositories struct {
 	WalletRepository wallet.WalletRepository
+	AuthRepository   auth.AuthRepository
 }
 
 type Usecases struct {

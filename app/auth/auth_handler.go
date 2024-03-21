@@ -30,23 +30,34 @@ func SetAuthHandler(router *chi.Mux, usecases domain.Usecases) {
 func (authHandler *authHandler) InitUser(w http.ResponseWriter, r *http.Request) {
 	ctx := context.Background()
 	req := wallet.WalletCreationRequest{}
-	var resp response.Response[string]
+	resp := &response.Response[auth.Token]{}
 
 	req.CustomerId = r.FormValue("customer_xid")
 	err := req.Validate()
 	if err != nil {
-		resp.BadRequest("invalid payload")
-		resp.WriteResponse(w)
+		errResp := &response.Response[response.Error]{
+			Data: &response.Error{
+				Error: err.Error(),
+			},
+		}
+		errResp.Fail()
+		errResp.WriteResponse(w)
 		return
 	}
 
-	token, err := authHandler.authUsecase.InitUser(ctx, req.CustomerId)
+	resp, err = authHandler.authUsecase.InitUser(ctx, req.CustomerId)
 	if err != nil {
-		resp.InternalServerError(err.Error())
-		resp.WriteResponse(w)
+		errResp := &response.Response[response.Error]{
+			Data: &response.Error{
+				Error: err.Error(),
+			},
+		}
+		errResp.Error()
+		errResp.WriteResponse(w)
 		return
 	}
 
-	resp.Data = token
+	resp.StatusCode = http.StatusOK
+	resp.Status = response.STATUS_SUCCESS
 	resp.WriteResponse(w)
 }
