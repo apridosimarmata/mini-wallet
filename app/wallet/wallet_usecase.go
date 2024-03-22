@@ -111,6 +111,9 @@ func (usecase *walletUsecase) CreateWalletTransaction(ctx context.Context, req w
 	var successResponse *response.Response[wallet.Wallet]
 	var walletLock *redsync.Mutex
 
+	ctx, cancel := context.WithTimeout(ctx, time.Second*5)
+	defer cancel()
+
 	walletResult, err := usecase.walletRepository.GetWalletById(ctx, req.WalletId)
 	if err != nil {
 		infrastructure.Log("got error on usecase.walletRepository.GetWalletById() - CreateWalletTransaction")
