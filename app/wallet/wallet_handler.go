@@ -1,12 +1,13 @@
 package wallet
 
 import (
-	"context"
 	"mini-wallet/domain"
 	"mini-wallet/domain/auth"
 	"mini-wallet/domain/common/response"
 	"mini-wallet/domain/wallet"
 	"net/http"
+	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -31,8 +32,8 @@ func SetWalletHandler(router *chi.Mux, usecases domain.Usecases) {
 
 		// POST
 		r.Post("/", walletHandler.EnableWallet)
-		r.Post("/deposits", walletHandler.AddWalletBalance)
-		r.Post("/withdrawals", walletHandler.WithdrawFromWallet)
+		r.Post("/deposits", walletHandler.CreateWalletDepositTransaction)
+		r.Post("/withdrawals", walletHandler.CreateWalletWithdrawalTransaction)
 
 		// PATCH
 		r.Patch("/", walletHandler.DisableWallet)
@@ -46,23 +47,13 @@ func (handler *walletHandler) GetWalletBalance(w http.ResponseWriter, r *http.Re
 	resp := &response.Response[wallet.Wallet]{}
 
 	result, err := handler.walletUsecase.GetWalletBalance(r.Context(), walletId.(string))
-	if err.Error() != response.WALLET_DISABLED_ERROR {
-		errResp := &response.Response[response.Error]{
-			Data: &response.Error{
-				Error: err.Error(),
-			},
-		}
-		errResp.Fail()
-		errResp.WriteResponse(w)
-		return
-	}
 	if err != nil {
 		errResp := &response.Response[response.Error]{
 			Data: &response.Error{
 				Error: err.Error(),
 			},
 		}
-		errResp.Error()
+		errResp.Error(err.Error())
 		errResp.WriteResponse(w)
 		return
 	}
@@ -83,7 +74,7 @@ func (handler *walletHandler) EnableWallet(w http.ResponseWriter, r *http.Reques
 				Error: err.Error(),
 			},
 		}
-		errResp.Error()
+		errResp.Error(err.Error())
 		errResp.WriteResponse(w)
 		return
 	}
@@ -95,7 +86,6 @@ func (handler *walletHandler) EnableWallet(w http.ResponseWriter, r *http.Reques
 
 func (handler *walletHandler) DisableWallet(w http.ResponseWriter, r *http.Request) {
 	walletId := r.Context().Value("walletId")
-	resp := &response.Response[wallet.Wallet]{}
 
 	result, err := handler.walletUsecase.DisableWallet(r.Context(), walletId.(string))
 	if err != nil {
@@ -104,45 +94,126 @@ func (handler *walletHandler) DisableWallet(w http.ResponseWriter, r *http.Reque
 				Error: err.Error(),
 			},
 		}
-		errResp.Error()
+		errResp.Error(err.Error())
 		errResp.WriteResponse(w)
 		return
 	}
 
+	resp := &response.Response[wallet.Wallet]{}
+	resp = result
+	resp.Success(response.STATUS_SUCCESS, *resp.Data)
+	resp.WriteResponse(w)
+}
+
+func (handler *walletHandler) CreateWalletDepositTransaction(w http.ResponseWriter, r *http.Request) {
+	walletId := r.Context().Value("walletId")
+	req := wallet.WalletTransactionRequest{
+		WalletId: walletId.(string),
+	}
+
+	transactionAmount := r.FormValue("amount")
+	referenceId := r.FormValue("reference_id")
+	transactionAmountInt, err := strconv.Atoi(transactionAmount)
+	if err != nil {
+		transactionAmountInt = int(0)
+	}
+
+	req.Amount = transactionAmountInt
+	req.ReferenceId = referenceId
+	req.Type = wallet.WALLET_TRANSACTION_DEPOSIT
+	req.Timestamp = int(time.Now().Unix())
+	if err = req.Validate(); err != nil {
+		errResp := &response.Response[response.Error]{
+			Data: &response.Error{
+				Error: err.Error(),
+			},
+		}
+		errResp.Error(err.Error())
+		errResp.WriteResponse(w)
+		return
+	}
+
+	result, err := handler.walletUsecase.CreateWalletTransaction(r.Context(), req)
+	if err != nil {
+		errResp := &response.Response[response.Error]{
+			Data: &response.Error{
+				Error: err.Error(),
+			},
+		}
+		errResp.Error(err.Error())
+		errResp.WriteResponse(w)
+		return
+	}
+
+	resp := &response.Response[wallet.Wallet]{}
+	resp = result
+	resp.Success(response.STATUS_SUCCESS, *resp.Data)
+	resp.WriteResponse(w)
+}
+
+func (handler *walletHandler) CreateWalletWithdrawalTransaction(w http.ResponseWriter, r *http.Request) {
+	walletId := r.Context().Value("walletId")
+	req := wallet.WalletTransactionRequest{
+		WalletId: walletId.(string),
+	}
+
+	transactionAmount := r.FormValue("amount")
+	referenceId := r.FormValue("reference_id")
+	transactionAmountInt, err := strconv.Atoi(transactionAmount)
+	if err != nil {
+		transactionAmountInt = int(0)
+	}
+
+	req.Amount = transactionAmountInt
+	req.ReferenceId = referenceId
+	req.Type = wallet.WALLET_TRANSACTION_WITHDRAWAL
+	req.Timestamp = int(time.Now().Unix())
+	if err = req.Validate(); err != nil {
+		errResp := &response.Response[response.Error]{
+			Data: &response.Error{
+				Error: err.Error(),
+			},
+		}
+		errResp.Error(err.Error())
+		errResp.WriteResponse(w)
+		return
+	}
+
+	result, err := handler.walletUsecase.CreateWalletTransaction(r.Context(), req)
+	if err != nil {
+		errResp := &response.Response[response.Error]{
+			Data: &response.Error{
+				Error: err.Error(),
+			},
+		}
+		errResp.Error(err.Error())
+		errResp.WriteResponse(w)
+		return
+	}
+
+	resp := &response.Response[wallet.Wallet]{}
 	resp = result
 	resp.Success(response.STATUS_SUCCESS, *resp.Data)
 	resp.WriteResponse(w)
 }
 
 func (handler *walletHandler) GetWalletTransactions(w http.ResponseWriter, r *http.Request) {
-	ctx := context.Background()
+	walletId := r.Context().Value("walletId")
 
-	err := handler.walletUsecase.AddWalletBalance(ctx, wallet.WalletTransactionRequest{})
+	result, err := handler.walletUsecase.GetWalletTransactions(r.Context(), walletId.(string))
 	if err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte("unauthorized"))
+		errResp := &response.Response[response.Error]{
+			Data: &response.Error{
+				Error: err.Error(),
+			},
+		}
+		errResp.Error(err.Error())
+		errResp.WriteResponse(w)
 		return
 	}
-}
 
-func (handler *walletHandler) AddWalletBalance(w http.ResponseWriter, r *http.Request) {
-	ctx := context.Background()
-
-	err := handler.walletUsecase.AddWalletBalance(ctx, wallet.WalletTransactionRequest{})
-	if err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte("unauthorized"))
-		return
-	}
-}
-
-func (handler *walletHandler) WithdrawFromWallet(w http.ResponseWriter, r *http.Request) {
-	ctx := context.Background()
-
-	err := handler.walletUsecase.AddWalletBalance(ctx, wallet.WalletTransactionRequest{})
-	if err != nil {
-		w.WriteHeader(http.StatusUnauthorized)
-		w.Write([]byte("unauthorized"))
-		return
-	}
+	resp := &response.Response[[]wallet.WalletTransaction]{}
+	resp = result
+	resp.Success(response.STATUS_SUCCESS, *resp.Data)
+	resp.WriteResponse(w)
 }

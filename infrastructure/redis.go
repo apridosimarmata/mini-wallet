@@ -2,6 +2,7 @@ package infrastructure
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -22,6 +23,7 @@ type Cache interface {
 	SetString(ctx context.Context, key string, obj string, ttlInSec int) (err error)
 	GetString(ctx context.Context, key string) (result string, err error)
 	Del(ctx context.Context, key string) (err error)
+	Publish(ctx context.Context, channel string, payload interface{}) (err error)
 }
 
 type redisCache struct {
@@ -32,6 +34,16 @@ func NewCache(redisClient redis.Client) Cache {
 	return &redisCache{
 		client: redisClient,
 	}
+}
+
+func (cache *redisCache) Publish(ctx context.Context, channel string, payload interface{}) (err error) {
+	payloadInString, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+
+	_, err = cache.client.Publish(channel, payloadInString).Result()
+	return err
 }
 
 func (cache *redisCache) SetString(ctx context.Context, key string, obj string, ttlInSec int) (err error) {

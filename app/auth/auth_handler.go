@@ -40,7 +40,7 @@ func (authHandler *authHandler) InitUser(w http.ResponseWriter, r *http.Request)
 				Error: err.Error(),
 			},
 		}
-		errResp.Fail()
+		errResp.Error(err.Error())
 		errResp.WriteResponse(w)
 		return
 	}
@@ -52,7 +52,7 @@ func (authHandler *authHandler) InitUser(w http.ResponseWriter, r *http.Request)
 				Error: err.Error(),
 			},
 		}
-		errResp.Error()
+		errResp.Error(err.Error())
 		errResp.WriteResponse(w)
 		return
 	}

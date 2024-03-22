@@ -8,8 +8,10 @@ import (
 	"mini-wallet/domain/common/response"
 	"mini-wallet/domain/wallet"
 	"mini-wallet/infrastructure"
+	"time"
 
 	"github.com/go-redsync/redsync/v4"
+	"github.com/google/uuid"
 )
 
 const (
@@ -19,14 +21,20 @@ const (
 type walletUsecase struct {
 	walletRepository wallet.WalletRepository
 	cache            infrastructure.Cache
+	config           infrastructure.Config
 	mutexProvider    *redsync.Redsync
 }
 
-func NewWalletUsecase(repositories domain.Repositories, cache infrastructure.Cache, mutexProvider *redsync.Redsync) wallet.WalletUsecase {
+func NewWalletUsecase(
+	repositories domain.Repositories,
+	cache infrastructure.Cache,
+	mutexProvider *redsync.Redsync,
+	config infrastructure.Config) wallet.WalletUsecase {
 	return &walletUsecase{
 		walletRepository: repositories.WalletRepository,
 		cache:            cache,
 		mutexProvider:    mutexProvider,
+		config:           config,
 	}
 }
 
@@ -42,7 +50,7 @@ func (usecase *walletUsecase) GetWalletBalance(ctx context.Context, walletId str
 	}
 
 	if err = walletResult.ValidateWalletStatus(); err != nil {
-		return nil, errors.New(response.WALLET_DISABLED_ERROR)
+		return nil, errors.New(response.ERROR_WALLET_DISABLED)
 	}
 
 	return &response.Response[wallet.Wallet]{
@@ -62,6 +70,8 @@ func (usecase *walletUsecase) EnableWallet(ctx context.Context, walletId string)
 	}
 
 	walletResult.Status = wallet.WALLET_STATUS_ENABLED
+	nowString := time.Now().Format(time.RFC3339)
+	walletResult.EnabledAt = &nowString
 	err = usecase.walletRepository.UpdateWallet(ctx, *walletResult)
 	if err != nil {
 		infrastructure.Log("got error on usecase.walletRepository.UpdateWallet() - EnableWallet")
@@ -85,6 +95,7 @@ func (usecase *walletUsecase) DisableWallet(ctx context.Context, walletId string
 	}
 
 	walletResult.Status = wallet.WALLET_STATUS_DISABLED
+	walletResult.EnabledAt = nil
 	err = usecase.walletRepository.UpdateWallet(ctx, *walletResult)
 	if err != nil {
 		infrastructure.Log("got error on usecase.walletRepository.UpdateWallet() - EnableWallet")
@@ -96,59 +107,128 @@ func (usecase *walletUsecase) DisableWallet(ctx context.Context, walletId string
 	}, nil
 }
 
-func (usecase *walletUsecase) AddWalletBalance(ctx context.Context, req wallet.WalletTransactionRequest) (err error) {
+func (usecase *walletUsecase) CreateWalletTransaction(ctx context.Context, req wallet.WalletTransactionRequest) (res *response.Response[wallet.Wallet], err error) {
+	var successResponse *response.Response[wallet.Wallet]
+	var walletLock *redsync.Mutex
 
-	if err := usecase.getWalletLock("anty"); err != nil {
+	walletResult, err := usecase.walletRepository.GetWalletById(ctx, req.WalletId)
+	if err != nil {
+		infrastructure.Log("got error on usecase.walletRepository.GetWalletById() - CreateWalletTransaction")
+		return nil, err
+	}
+
+	if walletResult == nil {
+		return nil, errors.New("wallet not found")
+	}
+
+	if err = walletResult.ValidateWalletStatus(); err != nil {
+		return nil, errors.New(response.ERROR_WALLET_DISABLED)
+	}
+
+	// check if reference id already used before
+	walletTransaction, err := usecase.walletRepository.GetWalletTransactionByReferenceId(ctx, req.ReferenceId)
+	if err != nil {
+		infrastructure.Log("got error on usecase.walletRepository.GetWalletTransactionByReferenceId() - CreateWalletTransaction")
+		return nil, err
+	}
+
+	if walletTransaction != nil {
+		return nil, errors.New("reference id already used")
+	}
+
+	successResponse = &response.Response[wallet.Wallet]{
+		Data: walletResult,
+	}
+
+	// err = usecase.cache.Publish(ctx, usecase.config.WALLET_TRANSACTION_CHANNEL, req)
+	// if err != nil {
+	// 	infrastructure.Log("got error on usecase.cache.Publish() - CreateWalletTransaction")
+	// 	return nil, err
+	// }
+
+	transactionId, err := uuid.NewV6()
+	if err != nil {
+		infrastructure.Log("got error on uuid.NewV6()")
+		return nil, err
+	}
+
+	transactionEntity := wallet.WalletTransactionEntity{
+		Id:          transactionId.String(),
+		WalletId:    walletResult.Id,
+		Amount:      req.Amount,
+		CreatedAt:   time.Now().Format(time.RFC3339),
+		CreatedBy:   walletResult.OwnedBy,
+		Status:      wallet.WALLET_TRANSACTION_STATUS_SUCCESS,
+		ReferenceId: req.ReferenceId,
+	}
+
+	if walletLock, err = usecase.getWalletLock(walletResult.Id); err != nil {
 		infrastructure.Log("got error on usecase.getWalletLock()")
-		return err
+		return nil, errors.New("another process maybe still modifying this wallet")
 	}
 
-	if err := usecase.relaseWalletLock("anty"); err != nil {
+	switch req.Type {
+	case wallet.WALLET_TRANSACTION_DEPOSIT:
+		walletResult.Balance += req.Amount
+		transactionEntity.Type = wallet.WALLET_TRANSACTION_DEPOSIT
+
+		err = usecase.walletRepository.CreateWalletTransaction(ctx, *walletResult, transactionEntity)
+		if err != nil {
+			infrastructure.Log("got error on usecase.walletRepository.CreateWalletDeposit() - CreateWalletTransaction")
+			return nil, err
+		}
+	case wallet.WALLET_TRANSACTION_WITHDRAWAL:
+		if walletResult.Balance < req.Amount {
+			return nil, errors.New(response.ERROR_INSSUFICIENT_FUND)
+		}
+
+		walletResult.Balance -= req.Amount
+		transactionEntity.Type = wallet.WALLET_TRANSACTION_WITHDRAWAL
+		err = usecase.walletRepository.CreateWalletTransaction(ctx, *walletResult, transactionEntity)
+		if err != nil {
+			infrastructure.Log("got error on usecase.walletRepository.CreateWalletWithdrawal() - CreateWalletTransaction")
+			return nil, err
+		}
+	}
+
+	if ok, err := walletLock.Unlock(); !ok || err != nil {
 		infrastructure.Log("got error on usecase.relaseWalletLock()")
-		return err
+		return nil, err
 	}
 
-	return
+	return successResponse, nil
 }
 
-func (usecase *walletUsecase) ReduceWalletBalance(ctx context.Context, req wallet.WalletTransactionRequest) (err error) {
-
-	if err := usecase.getWalletLock("anty"); err != nil {
-		infrastructure.Log("got error on usecase.getWalletLock()")
-		return err
+func (usecase *walletUsecase) GetWalletTransactions(ctx context.Context, walletId string) (res *response.Response[[]wallet.WalletTransaction], err error) {
+	walletTransactions, err := usecase.walletRepository.GetWalletTransactionsByWalletId(ctx, walletId, 1, 10)
+	if err != nil {
+		infrastructure.Log("got error on usecase.walletRepository.GetWalletTransactionByReferenceId() - CreateWalletTransaction")
+		return nil, err
 	}
 
-	if err := usecase.relaseWalletLock("anty"); err != nil {
-		infrastructure.Log("got error on usecase.relaseWalletLock()")
-		return err
+	transactions := []wallet.WalletTransaction{}
+
+	for _, walletTransaction := range walletTransactions {
+		switch walletTransaction.Type {
+		case wallet.WALLET_TRANSACTION_DEPOSIT:
+			transactions = append(transactions, walletTransaction.ToDepositTransaction())
+		case wallet.WALLET_TRANSACTION_WITHDRAWAL:
+			transactions = append(transactions, walletTransaction.ToWithdrawalTransaction())
+		}
 	}
 
-	return
+	return &response.Response[[]wallet.WalletTransaction]{
+		Data: &transactions,
+	}, nil
 }
 
-func (usecase *walletUsecase) GetWalletTransactions(ctx context.Context, req wallet.GetWalletTransactionRequest) (res []wallet.WalletTransaction, err error) {
-
-	return
-}
-
-func (usecase *walletUsecase) getWalletLock(walletId string) error {
+func (usecase *walletUsecase) getWalletLock(walletId string) (mutex *redsync.Mutex, err error) {
 	walletMutexKey := fmt.Sprintf(mutexKey, walletId)
 	walletMutex := usecase.mutexProvider.NewMutex(walletMutexKey)
 
 	if err := walletMutex.Lock(); err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
-}
-
-func (usecase *walletUsecase) relaseWalletLock(walletId string) error {
-	walletMutexKey := fmt.Sprintf(mutexKey, walletId)
-	walletMutex := usecase.mutexProvider.NewMutex(walletMutexKey)
-
-	if ok, err := walletMutex.Unlock(); !ok || err != nil {
-		return err
-	}
-
-	return nil
+	return walletMutex, nil
 }

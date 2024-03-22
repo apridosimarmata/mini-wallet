@@ -92,9 +92,9 @@ func (usecase *authUsecase) AuthorizeRequestMiddleware(next http.Handler) http.H
 		authHeader := strings.Split(r.Header.Get("Authorization"), "Bearer ")
 		if len(authHeader) != 2 {
 			unauthorizedResp.Data = &response.Error{
-				Error: "unauthorized",
+				Error: response.ERROR_UNAUTHORIZED,
 			}
-			unauthorizedResp.Fail()
+			unauthorizedResp.Error(response.ERROR_UNAUTHORIZED)
 			unauthorizedResp.WriteResponse(w)
 			return
 		}
@@ -102,9 +102,9 @@ func (usecase *authUsecase) AuthorizeRequestMiddleware(next http.Handler) http.H
 		walletId, err := usecase.authRepository.GetTokenWalletId(ctx, authHeader[1])
 		if err != nil || walletId == "" {
 			unauthorizedResp.Data = &response.Error{
-				Error: "unauthorized",
+				Error: response.ERROR_UNAUTHORIZED,
 			}
-			unauthorizedResp.Fail()
+			unauthorizedResp.Error(response.ERROR_UNAUTHORIZED)
 			unauthorizedResp.WriteResponse(w)
 			return
 		}

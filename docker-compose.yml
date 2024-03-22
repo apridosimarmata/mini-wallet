@@ -10,11 +10,11 @@ services:
         dockerfile: Dockerfile
     container_name: mini-wallet
     env_file:
-        - .env
+        - docker.env
     volumes:
         - ./:/go/src/mini-wallet
     networks:
-        - local
+      - local
     depends_on:
       redis: 
         condition: service_healthy
@@ -35,7 +35,7 @@ services:
     networks:
       - local
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
